@@ -1,0 +1,69 @@
+---
+title: "Access to Basic Sanitation Over Time"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The percentage of population that has access to at least basic sanitation services has increased over time. We see that between 2000 and 2017, the average level of global access to basic sanitation increased by around 29 per cent, with an average yearly growth rate of 1.7 per cent. This is the case regardless of country income group. However, the rate of change does vary by income group, with the bottom three income groups experiencing an average yearly change of between 2.4 and 3.8 per cent, whilst for upper-middle and high income countries we see lower average yearly growth rates of 1.6 and 0.04 per cent, respectively. This can in part be explained by the fact that a higher proportion of high income countries' population already had access to at least basic sanitation in 2000. 
+
+Whilst 73 per cent of the global population had access to at least basic sanitation in 2017, access varied by country income group. The percentage of population with access to basic sanitation in 2017 for middle, lower-middle and low income countries was below the global average level of access. For low income countries, despite having had an increase in access of 50 per cent between 2000 and 2017, by 2017 only 30 per cent of the population had access to safely managed sanitation services - that's over 500 million people without basic sanitation in low income countries alone (using UNDESA Population figures for 2017)!
+
+### Percentage of population using at least basic sanitation services from 2000 to 2017, by income group
+
+```{r pressure, echo=FALSE, message=FALSE, warning=FALSE, fig.align='center', fig.width=10}
+library(httr)
+library(jsonlite)
+library(rjstat)
+library(R.cache)
+library(dplyr)
+library(ggplot2)
+
+# BRING IN DATA FROM API USING GET LIBRARY, CACHE RESULTS AND CONVERT TO DATAFRAME ####
+# for the purpose of demonstrating ability to call APIs, I'm using HTTR but acknowledge that WDI package could be used
+
+key <- list()
+data <- loadCache(key)
+if (is.null(data)) {
+# make a GET request from the API - bring in JSON-stat data from the API
+  data <- GET("http://api.worldbank.org/v2/country/all/indicator/SH.STA.BASS.ZS?date=1960:2020&format=jsonstat")
+  
+  saveCache(data, key=key, comment="data")
+}
+
+# convert content of data object into "raw" content 
+data <- httr::content(data, as="raw")
+# convert to "character"
+json_stat <- fromJSONstat(rawToChar(data))
+# convert to a dataframe
+df_sani <- as.data.frame(json_stat)
+
+# CLEANING DATAFRAME ####
+
+# rename columns, remove missing values, filter by income groups and World, select columns to keep and group by country 
+df_sani <- df_sani %>% na.omit(df_sani) %>%
+  rename(Country = WDI.data..total.15840.records..Country , Series = WDI.data..total.15840.records..Series, Year = WDI.data..total.15840.records..Year, Value = WDI.data..total.15840.records..value)%>%
+  filter(Country %in% c("High income", "Upper middle income", "Middle income", "Lower middle income", "Low income", "World"))%>%select(Country, Year, Value) %>% group_by(Country)
+
+  # auxiliary df for average yearly change analysis
+  df_sani_change <- df_sani %>%group_by(Country)%>% mutate(change=(Value-lag(Value,1))/lag(Value,1)*100)%>%na.omit(df_sani)%>%summarise(aver_change = mean(change))
+
+# PRODUCING PLOT ####
+
+ggplot(data = df_sani) +
+  geom_col(aes(x = Year, y = Value, fill = Country), data = . %>% filter(Country=="World"), position = "dodge")+
+  geom_line(aes(x = Year, y = Value, group =Country, color= Country), data = . %>% filter(Country!="World"), size =2)+
+  theme_minimal() +
+  ylab("People using at least basic sanitation services (% of pop)") +
+  scale_fill_manual(" ", breaks = "World", values = "#E2EDF1")+
+  scale_color_manual(" ",breaks = c("High income", "Upper middle income", "Middle income", "Lower middle income", "Low income", "World"), values = c("#F05023", "#009CA7", "#FDB714", "#00AB51", "#F78D28", "#E2EDF1")) +
+  theme(
+    legend.key = element_blank(),
+    legend.title = element_blank(),
+    legend.box = "vertical",
+    panel.grid.major.x = element_blank()
+  )
+```
+Source: World Bank Data
